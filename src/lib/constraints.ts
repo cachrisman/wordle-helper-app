@@ -1,4 +1,5 @@
-import { CandidateStats, ConstraintConflict, Constraints, GridState } from '../types';
+import { ConstraintConflict, Constraints, GridState } from '../types';
+import { computeFeedback, encodePattern } from './feedback';
 import { normalizeLetter } from './grid';
 
 interface RowEvidence {
@@ -6,25 +7,14 @@ interface RowEvidence {
   grey: number;
 }
 
+export type KeyboardLetterState = 'neutral' | 'grey' | 'yellow' | 'green';
+
 function countLetters(word: string): Record<string, number> {
   const counts: Record<string, number> = {};
   for (const letter of word) {
     counts[letter] = (counts[letter] ?? 0) + 1;
   }
   return counts;
-}
-
-function toSortedFrequency(
-  counts: Record<string, number>,
-  denominator: number
-): CandidateStats['overallFrequency'] {
-  return Object.entries(counts)
-    .map(([letter, count]) => ({
-      letter,
-      count,
-      ratio: denominator > 0 ? count / denominator : 0
-    }))
-    .sort((a, b) => b.count - a.count || a.letter.localeCompare(b.letter));
 }
 
 export function buildConstraintsFromGrid(gridState: GridState): Constraints {
@@ -37,35 +27,45 @@ export function buildConstraintsFromGrid(gridState: GridState): Constraints {
   const maxCounts: Record<string, number> = {};
   const conflicts: ConstraintConflict[] = [];
   const greenLettersByPosition: Record<number, Set<string>> = {};
+  const rowPatterns: Constraints['rowPatterns'] = [];
   const confirmedTotals: Record<string, number> = {};
 
-  gridState.forEach((row) => {
+  gridState.forEach((row, rowIdx) => {
     const rowEvidence: Record<string, RowEvidence> = {};
+    const guessLetters = row.map((cell) => normalizeLetter(cell.letter));
+    const isFilledRow = guessLetters.every((letter) => !!letter);
 
     row.forEach((cell, colIdx) => {
       const letter = normalizeLetter(cell.letter);
-      if (!letter) {
+      if (!letter || cell.feedback === null) {
         return;
       }
 
       rowEvidence[letter] ??= { positive: 0, grey: 0 };
 
-      if (cell.state === 'green') {
+      if (cell.feedback === 2) {
         rowEvidence[letter].positive += 1;
         confirmedTotals[letter] = (confirmedTotals[letter] ?? 0) + 1;
-
         greenLettersByPosition[colIdx] ??= new Set();
         greenLettersByPosition[colIdx].add(letter);
         exactPositions[colIdx] = letter;
-      } else if (cell.state === 'yellow') {
+      } else if (cell.feedback === 1) {
         rowEvidence[letter].positive += 1;
         confirmedTotals[letter] = (confirmedTotals[letter] ?? 0) + 1;
         excludedPositionSets[letter] ??= new Set();
         excludedPositionSets[letter].add(colIdx);
-      } else if (cell.state === 'grey') {
+      } else if (cell.feedback === 0) {
         rowEvidence[letter].grey += 1;
       }
     });
+
+    if (isFilledRow) {
+      const pattern = row.map((cell) => (cell.feedback === null ? 0 : cell.feedback));
+      rowPatterns.push({
+        guess: guessLetters.join(''),
+        pattern
+      });
+    }
 
     Object.entries(rowEvidence).forEach(([letter, evidence]) => {
       if (evidence.positive > 0 && evidence.grey > 0) {
@@ -106,7 +106,7 @@ export function buildConstraintsFromGrid(gridState: GridState): Constraints {
         letter,
         min,
         max,
-        message: `Letter "${letter.toUpperCase()}" needs at least ${min} but max is ${max}.`
+        message: `Letter "${letter.toUpperCase()}" needs at least ${min}, but max is ${max}.`
       });
     }
   });
@@ -119,7 +119,9 @@ export function buildConstraintsFromGrid(gridState: GridState): Constraints {
           type: 'positionExcluded',
           letter,
           position: pos,
-          message: `Letter "${letter.toUpperCase()}" is both fixed and excluded in position ${pos + 1}.`
+          message: `Letter "${letter.toUpperCase()}" is both green and excluded at position ${
+            pos + 1
+          }.`
         });
       }
     });
@@ -130,21 +132,31 @@ export function buildConstraintsFromGrid(gridState: GridState): Constraints {
     excludedPositions[letter] = [...positions].sort((a, b) => a - b);
   });
 
+  const excludedLetters = Object.entries(maxCounts)
+    .filter(([, value]) => value === 0)
+    .map(([letter]) => letter);
+
   return {
     exactPositions,
     excludedPositions,
     minCounts,
     maxCounts,
+    excludedLetters,
+    rowPatterns,
     conflicts
   };
 }
 
 export function filterWords(words: string[], constraints: Constraints): string[] {
-  const { exactPositions, excludedPositions, minCounts, maxCounts } = constraints;
+  const { exactPositions, excludedPositions, minCounts, maxCounts, rowPatterns } = constraints;
   const expectedLength = exactPositions.length;
   const excludedEntries = Object.entries(excludedPositions);
   const minEntries = Object.entries(minCounts);
   const maxEntries = Object.entries(maxCounts);
+  const patternEntries = rowPatterns.map((entry) => ({
+    ...entry,
+    key: encodePattern(entry.pattern)
+  }));
 
   return words.filter((candidateWord) => {
     const word = candidateWord.toLowerCase();
@@ -153,9 +165,9 @@ export function filterWords(words: string[], constraints: Constraints): string[]
       return false;
     }
 
-    for (let i = 0; i < expectedLength; i += 1) {
-      const required = exactPositions[i];
-      if (required && word[i] !== required) {
+    for (let idx = 0; idx < expectedLength; idx += 1) {
+      const required = exactPositions[idx];
+      if (required && word[idx] !== required) {
         return false;
       }
     }
@@ -180,36 +192,50 @@ export function filterWords(words: string[], constraints: Constraints): string[]
       }
     }
 
+    for (const rowEntry of patternEntries) {
+      const pattern = computeFeedback(rowEntry.guess, word);
+      if (encodePattern(pattern) !== rowEntry.key) {
+        return false;
+      }
+    }
+
     return true;
   });
 }
 
-export function analyzeCandidates(candidates: string[]): CandidateStats {
-  const candidateCount = candidates.length;
-  const overallCounts: Record<string, number> = {};
-  const coverageCounts: Record<string, number> = {};
-  const positionCounts = Array.from({ length: 5 }, () => ({} as Record<string, number>));
-  let uniqueTotal = 0;
+export function deriveKeyboardLetterState(
+  constraints: Constraints,
+  gridState: GridState
+): Record<string, KeyboardLetterState> {
+  const states: Record<string, KeyboardLetterState> = {};
+  for (const letter of 'abcdefghijklmnopqrstuvwxyz') {
+    states[letter] = 'neutral';
+  }
 
-  candidates.forEach((word) => {
-    const uniqueLetters = new Set(word);
-    uniqueTotal += uniqueLetters.size;
-
-    uniqueLetters.forEach((letter) => {
-      coverageCounts[letter] = (coverageCounts[letter] ?? 0) + 1;
-    });
-
-    word.split('').forEach((letter, idx) => {
-      overallCounts[letter] = (overallCounts[letter] ?? 0) + 1;
-      positionCounts[idx][letter] = (positionCounts[idx][letter] ?? 0) + 1;
+  gridState.forEach((row) => {
+    row.forEach((cell) => {
+      const letter = normalizeLetter(cell.letter);
+      if (!letter || cell.feedback === null) {
+        return;
+      }
+      if (cell.feedback === 2) {
+        states[letter] = 'green';
+      } else if (cell.feedback === 1 && states[letter] !== 'green') {
+        states[letter] = 'yellow';
+      }
     });
   });
 
-  return {
-    candidateCount,
-    overallFrequency: toSortedFrequency(overallCounts, candidateCount * 5),
-    positionFrequency: positionCounts.map((counts) => toSortedFrequency(counts, candidateCount)),
-    uniqueCoverage: toSortedFrequency(coverageCounts, candidateCount),
-    avgUniqueLetters: candidateCount > 0 ? uniqueTotal / candidateCount : 0
-  };
+  Object.entries(constraints.maxCounts).forEach(([letter, max]) => {
+    if (
+      max === 0 &&
+      states[letter] !== 'green' &&
+      states[letter] !== 'yellow' &&
+      (constraints.minCounts[letter] ?? 0) === 0
+    ) {
+      states[letter] = 'grey';
+    }
+  });
+
+  return states;
 }

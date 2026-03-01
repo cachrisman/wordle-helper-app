@@ -1,7 +1,7 @@
 import { PersistedState } from '../types';
 import { createEmptyGrid } from './grid';
 
-const STORAGE_KEY = 'wordle-hint-coach:v1';
+const STORAGE_KEY = 'wordle-hint-coach:v2';
 
 export function defaultPersistedState(): PersistedState {
   return {
@@ -9,7 +9,13 @@ export function defaultPersistedState(): PersistedState {
     activeRow: 0,
     activeCol: 0,
     viewMode: 'hints',
-    showAllCandidates: false
+    showAllCandidates: false,
+    showExplorationGuesses: false,
+    hardMode: false,
+    themePreference: 'dark',
+    followSystemTheme: false,
+    constraintsSnapshot: null,
+    candidatePage: 1
   };
 }
 
@@ -29,9 +35,22 @@ export function loadPersistedState(): PersistedState {
       return defaultPersistedState();
     }
 
+    const normalizedGrid = parsed.grid.map((row) =>
+      row.map((cell) => ({
+        letter: typeof cell.letter === 'string' ? cell.letter : '',
+        feedback:
+          typeof cell.feedback === 'number'
+            ? cell.feedback
+            : typeof cell.letter === 'string' && cell.letter
+              ? 0
+              : null
+      }))
+    );
+
     return {
       ...defaultPersistedState(),
-      ...parsed
+      ...parsed,
+      grid: normalizedGrid
     };
   } catch {
     return defaultPersistedState();

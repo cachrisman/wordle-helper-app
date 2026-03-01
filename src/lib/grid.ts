@@ -1,10 +1,10 @@
-import { GRID_COLS, GRID_ROWS, GridCell, GridState, TileState } from '../types';
+import { FeedbackValue, GRID_COLS, GRID_ROWS, GridCell, GridState } from '../types';
 
-const TILE_CYCLE: TileState[] = ['unknown', 'grey', 'yellow', 'green'];
+const TILE_CYCLE: FeedbackValue[] = [0, 1, 2];
 
 export function createEmptyGrid(rows = GRID_ROWS, cols = GRID_COLS): GridState {
   return Array.from({ length: rows }, () =>
-    Array.from({ length: cols }, (): GridCell => ({ letter: '', state: 'unknown' }))
+    Array.from({ length: cols }, (): GridCell => ({ letter: '', feedback: null }))
   );
 }
 
@@ -12,8 +12,8 @@ export function cloneGrid(grid: GridState): GridState {
   return grid.map((row) => row.map((cell) => ({ ...cell })));
 }
 
-export function cycleTileState(state: TileState): TileState {
-  const idx = TILE_CYCLE.indexOf(state);
+export function cycleTileFeedback(feedback: FeedbackValue): FeedbackValue {
+  const idx = TILE_CYCLE.indexOf(feedback);
   return TILE_CYCLE[(idx + 1) % TILE_CYCLE.length];
 }
 

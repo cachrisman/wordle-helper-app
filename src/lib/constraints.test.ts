@@ -1,14 +1,14 @@
 import { describe, expect, it } from 'vitest';
-import { GridState, TileState } from '../types';
+import { FeedbackValue, GridState } from '../types';
 import { buildConstraintsFromGrid, filterWords } from './constraints';
 import { createEmptyGrid } from './grid';
 
 function withCells(
-  cells: Array<{ row: number; col: number; letter: string; state: TileState }>
+  cells: Array<{ row: number; col: number; letter: string; feedback: FeedbackValue }>
 ): GridState {
   const grid = createEmptyGrid();
-  cells.forEach(({ row, col, letter, state }) => {
-    grid[row][col] = { letter, state };
+  cells.forEach(({ row, col, letter, feedback }) => {
+    grid[row][col] = { letter, feedback };
   });
   return grid;
 }
@@ -17,8 +17,8 @@ describe('filterWords', () => {
   it('applies green and yellow positional constraints', () => {
     const constraints = buildConstraintsFromGrid(
       withCells([
-        { row: 0, col: 0, letter: 'c', state: 'green' },
-        { row: 0, col: 1, letter: 'r', state: 'yellow' }
+        { row: 0, col: 0, letter: 'c', feedback: 2 },
+        { row: 0, col: 1, letter: 'r', feedback: 1 }
       ])
     );
 
@@ -29,11 +29,11 @@ describe('filterWords', () => {
   it('treats all-grey letters as absent when no present evidence exists', () => {
     const constraints = buildConstraintsFromGrid(
       withCells([
-        { row: 0, col: 0, letter: 's', state: 'grey' },
-        { row: 0, col: 1, letter: 't', state: 'grey' },
-        { row: 0, col: 2, letter: 'a', state: 'grey' },
-        { row: 0, col: 3, letter: 'r', state: 'grey' },
-        { row: 0, col: 4, letter: 'e', state: 'grey' }
+        { row: 0, col: 0, letter: 's', feedback: 0 },
+        { row: 0, col: 1, letter: 't', feedback: 0 },
+        { row: 0, col: 2, letter: 'a', feedback: 0 },
+        { row: 0, col: 3, letter: 'r', feedback: 0 },
+        { row: 0, col: 4, letter: 'e', feedback: 0 }
       ])
     );
 
@@ -44,8 +44,8 @@ describe('filterWords', () => {
   it('infers min and max count for duplicates from mixed feedback in one guess', () => {
     const constraints = buildConstraintsFromGrid(
       withCells([
-        { row: 0, col: 0, letter: 'a', state: 'yellow' },
-        { row: 0, col: 1, letter: 'a', state: 'grey' }
+        { row: 0, col: 0, letter: 'a', feedback: 1 },
+        { row: 0, col: 1, letter: 'a', feedback: 0 }
       ])
     );
 
@@ -59,8 +59,8 @@ describe('filterWords', () => {
   it('enforces min count evidence across guesses', () => {
     const constraints = buildConstraintsFromGrid(
       withCells([
-        { row: 0, col: 0, letter: 'a', state: 'green' },
-        { row: 1, col: 2, letter: 'a', state: 'yellow' }
+        { row: 0, col: 0, letter: 'a', feedback: 2 },
+        { row: 1, col: 2, letter: 'a', feedback: 1 }
       ])
     );
 
@@ -73,9 +73,9 @@ describe('filterWords', () => {
   it('caps max count when duplicate letter has extra grey tile', () => {
     const constraints = buildConstraintsFromGrid(
       withCells([
-        { row: 0, col: 0, letter: 'a', state: 'green' },
-        { row: 0, col: 1, letter: 'a', state: 'yellow' },
-        { row: 0, col: 2, letter: 'a', state: 'grey' }
+        { row: 0, col: 0, letter: 'a', feedback: 2 },
+        { row: 0, col: 1, letter: 'a', feedback: 1 },
+        { row: 0, col: 2, letter: 'a', feedback: 0 }
       ])
     );
 
@@ -89,10 +89,10 @@ describe('filterWords', () => {
   it('detects contradiction when min count exceeds inferred max', () => {
     const constraints = buildConstraintsFromGrid(
       withCells([
-        { row: 0, col: 0, letter: 'a', state: 'yellow' },
-        { row: 0, col: 1, letter: 'a', state: 'grey' },
-        { row: 1, col: 2, letter: 'a', state: 'yellow' },
-        { row: 1, col: 3, letter: 'a', state: 'grey' }
+        { row: 0, col: 0, letter: 'a', feedback: 1 },
+        { row: 0, col: 1, letter: 'a', feedback: 0 },
+        { row: 1, col: 2, letter: 'a', feedback: 1 },
+        { row: 1, col: 3, letter: 'a', feedback: 0 }
       ])
     );
 
@@ -101,5 +101,20 @@ describe('filterWords', () => {
     expect(conflict?.letter).toBe('a');
     expect(conflict?.min).toBe(2);
     expect(conflict?.max).toBe(1);
+  });
+
+  it('uses exact feedback patterns for filtering duplicate cases', () => {
+    const constraints = buildConstraintsFromGrid(
+      withCells([
+        { row: 0, col: 0, letter: 'a', feedback: 0 },
+        { row: 0, col: 1, letter: 'l', feedback: 1 },
+        { row: 0, col: 2, letter: 'l', feedback: 0 },
+        { row: 0, col: 3, letter: 'e', feedback: 0 },
+        { row: 0, col: 4, letter: 'e', feedback: 0 }
+      ])
+    );
+
+    const words = ['lobby', 'hello', 'allow', 'fella'];
+    expect(filterWords(words, constraints)).toEqual(['lobby']);
   });
 });

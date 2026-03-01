@@ -1,17 +1,25 @@
 interface CandidatesPanelProps {
   totalCount: number;
-  shownCandidates: string[];
+  shownCandidates: Array<{ word: string; probability: number }>;
   showingAll: boolean;
+  currentPage: number;
+  totalPages: number;
   onToggleShowAll: () => void;
   onRefreshSample: () => void;
+  onNextPage: () => void;
+  onPrevPage: () => void;
 }
 
 export function CandidatesPanel({
   totalCount,
   shownCandidates,
   showingAll,
+  currentPage,
+  totalPages,
   onToggleShowAll,
-  onRefreshSample
+  onRefreshSample,
+  onNextPage,
+  onPrevPage
 }: CandidatesPanelProps) {
   return (
     <section className="panel panel-secondary">
@@ -22,7 +30,7 @@ export function CandidatesPanel({
 
       <div className="candidate-controls">
         <button type="button" className="secondary-button" onClick={onToggleShowAll}>
-          {showingAll ? 'Show random 20' : `Show all (${totalCount})`}
+          {showingAll ? 'Show random sample' : `Show paginated list (${totalCount})`}
         </button>
         {!showingAll && totalCount > 20 && (
           <button type="button" className="secondary-button" onClick={onRefreshSample}>
@@ -32,10 +40,37 @@ export function CandidatesPanel({
       </div>
 
       <ul className="candidate-list" aria-live="polite">
-        {shownCandidates.map((word) => (
-          <li key={word}>{word.toUpperCase()}</li>
+        {shownCandidates.map(({ word, probability }) => (
+          <li key={word}>
+            <span>{word.toUpperCase()}</span>
+            <small>{(probability * 100).toFixed(2)}%</small>
+          </li>
         ))}
       </ul>
+
+      {showingAll && totalPages > 1 && (
+        <div className="candidate-controls">
+          <button
+            type="button"
+            className="secondary-button"
+            disabled={currentPage <= 1}
+            onClick={onPrevPage}
+          >
+            Prev page
+          </button>
+          <span className="helper-text">
+            Page {currentPage} / {totalPages}
+          </span>
+          <button
+            type="button"
+            className="secondary-button"
+            disabled={currentPage >= totalPages}
+            onClick={onNextPage}
+          >
+            Next page
+          </button>
+        </div>
+      )}
       {shownCandidates.length === 0 && <p>No candidates to display.</p>}
     </section>
   );

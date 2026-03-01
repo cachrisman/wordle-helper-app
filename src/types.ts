@@ -2,23 +2,33 @@ export const GRID_ROWS = 6;
 export const GRID_COLS = 5;
 export const ALPHABET = 'abcdefghijklmnopqrstuvwxyz';
 
-export type TileState = 'unknown' | 'grey' | 'yellow' | 'green';
+export type FeedbackValue = 0 | 1 | 2;
 
 export interface GridCell {
   letter: string;
-  state: TileState;
+  feedback: FeedbackValue | null;
 }
 
 export type GridState = GridCell[][];
 
+export interface GuessPattern {
+  guess: string;
+  pattern: FeedbackValue[];
+}
+
 export interface ConstraintConflict {
   id: string;
-  type: 'positionExcluded' | 'minExceedsMax' | 'greenPositionConflict';
+  type:
+    | 'positionExcluded'
+    | 'minExceedsMax'
+    | 'greenPositionConflict'
+    | 'feedbackMismatch';
   message: string;
   letter?: string;
   position?: number;
   min?: number;
   max?: number;
+  row?: number;
 }
 
 export interface Constraints {
@@ -26,24 +36,27 @@ export interface Constraints {
   excludedPositions: Record<string, number[]>;
   minCounts: Record<string, number>;
   maxCounts: Record<string, number>;
+  excludedLetters: string[];
+  rowPatterns: GuessPattern[];
   conflicts: ConstraintConflict[];
 }
 
 export interface FrequencyEntry {
   letter: string;
-  count: number;
+  score: number;
   ratio: number;
+  topPositions: number[];
 }
 
-export interface CandidateStats {
-  candidateCount: number;
+export interface LetterStats {
   overallFrequency: FrequencyEntry[];
-  positionFrequency: FrequencyEntry[][];
-  uniqueCoverage: FrequencyEntry[];
-  avgUniqueLetters: number;
+  byPosition: FrequencyEntry[][];
+  presenceFrequency: FrequencyEntry[];
+  totalWeight: number;
 }
 
 export type ViewMode = 'hints' | 'candidates';
+export type ThemePreference = 'dark' | 'light';
 
 export interface PersistedState {
   grid: GridState;
@@ -51,4 +64,17 @@ export interface PersistedState {
   activeCol: number;
   viewMode: ViewMode;
   showAllCandidates: boolean;
+  showExplorationGuesses: boolean;
+  hardMode: boolean;
+  themePreference: ThemePreference;
+  followSystemTheme: boolean;
+  constraintsSnapshot: Constraints | null;
+  candidatePage: number;
+}
+
+export interface GuessInfoGainScore {
+  guess: string;
+  bits: number;
+  expectedRemaining: number;
+  meter: number;
 }
